@@ -1,0 +1,275 @@
+- name: Create a virtual machine on given ESXi hostname
+  community.vmware.vmware_guest:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    folder: /DC1/vm/
+    name: test_vm_0001
+    state: poweredon
+    guest_id: centos64Guest
+    # This is hostname of particular ESXi server on which user wants VM to be deployed
+    esxi_hostname: "{{ esxi_hostname }}"
+    disk:
+    - size_gb: 10
+      type: thin
+      datastore: datastore1
+    hardware:
+      memory_mb: 512
+      num_cpus: 4
+      scsi: paravirtual
+    networks:
+    - name: VM Network
+      mac: aa:bb:dd:aa:00:14
+      ip: 10.10.10.100
+      netmask: 255.255.255.0
+      device_type: vmxnet3
+    wait_for_ip_address: true
+    wait_for_ip_address_timeout: 600
+  delegate_to: localhost
+  register: deploy_vm
+
+- name: Create a virtual machine from a template
+  community.vmware.vmware_guest:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    folder: /testvms
+    name: testvm_2
+    state: poweredon
+    template: template_el7
+    disk:
+    - size_gb: 10
+      type: thin
+      datastore: g73_datastore
+    # Add another disk from an existing VMDK
+    - filename: "[datastore1] testvms/testvm_2_1/testvm_2_1.vmdk"
+    hardware:
+      memory_mb: 512
+      num_cpus: 6
+      num_cpu_cores_per_socket: 3
+      scsi: paravirtual
+      memory_reservation_lock: True
+      mem_limit: 8096
+      mem_reservation: 4096
+      cpu_limit: 8096
+      cpu_reservation: 4096
+      max_connections: 5
+      hotadd_cpu: True
+      hotremove_cpu: True
+      hotadd_memory: False
+      version: 12 # Hardware version of virtual machine
+      boot_firmware: "efi"
+    cdrom:
+        - controller_number: 0
+          unit_number: 0
+          state: present
+          type: iso
+          iso_path: "[datastore1] livecd.iso"
+    networks:
+    - name: VM Network
+      mac: aa:bb:dd:aa:00:14
+    wait_for_ip_address: true
+  delegate_to: localhost
+  register: deploy
+
+- name: Clone a virtual machine from Windows template and customize
+  community.vmware.vmware_guest:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    datacenter: datacenter1
+    cluster: cluster
+    name: testvm-2
+    template: template_windows
+    networks:
+    - name: VM Network
+      ip: 192.168.1.100
+      netmask: 255.255.255.0
+      gateway: 192.168.1.1
+      mac: aa:bb:dd:aa:00:14
+      domain: my_domain
+      dns_servers:
+      - 192.168.1.1
+      - 192.168.1.2
+    - vlan: 1234
+      type: dhcp
+    customization:
+      autologon: true
+      dns_servers:
+      - 192.168.1.1
+      - 192.168.1.2
+      domain: my_domain
+      password: new_vm_password
+      runonce:
+      - powershell.exe -ExecutionPolicy Unrestricted -File C:\Windows\Temp\ConfigureRemotingForAnsible.ps1 -ForceNewSSLCert -EnableCredSSP
+  delegate_to: localhost
+
+- name:  Clone a virtual machine from Linux template and customize
+  community.vmware.vmware_guest:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    datacenter: "{{ datacenter }}"
+    state: present
+    folder: /DC1/vm
+    template: "{{ template }}"
+    name: "{{ vm_name }}"
+    cluster: DC1_C1
+    networks:
+      - name: VM Network
+        ip: 192.168.10.11
+        netmask: 255.255.255.0
+    wait_for_ip_address: True
+    customization:
+      domain: "{{ guest_domain }}"
+      dns_servers:
+        - 8.9.9.9
+        - 7.8.8.9
+      dns_suffix:
+        - example.com
+        - example2.com
+  delegate_to: localhost
+
+- name: Rename a virtual machine (requires the virtual machine's uuid)
+  community.vmware.vmware_guest:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    uuid: "{{ vm_uuid }}"
+    name: new_name
+    state: present
+  delegate_to: localhost
+
+- name: Remove a virtual machine by uuid
+  community.vmware.vmware_guest:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    uuid: "{{ vm_uuid }}"
+    state: absent
+  delegate_to: localhost
+
+- name: Remove a virtual machine from inventory
+  community.vmware.vmware_guest:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    name: vm_name
+    delete_from_inventory: True
+    state: absent
+  delegate_to: localhost
+
+- name: Manipulate vApp properties
+  community.vmware.vmware_guest:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    name: vm_name
+    state: present
+    vapp_properties:
+      - id: remoteIP
+        category: Backup
+        label: Backup server IP
+        type: string
+        value: 10.10.10.1
+      - id: old_property
+        operation: remove
+  delegate_to: localhost
+
+- name: Set powerstate of a virtual machine to poweroff by using UUID
+  community.vmware.vmware_guest:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    uuid: "{{ vm_uuid }}"
+    state: poweredoff
+  delegate_to: localhost
+
+- name: Deploy a virtual machine in a datastore different from the datastore of the template
+  community.vmware.vmware_guest:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    name: "{{ vm_name }}"
+    state: present
+    template: "{{ template_name }}"
+    # Here datastore can be different which holds template
+    datastore: "{{ virtual_machine_datastore }}"
+    hardware:
+      memory_mb: 512
+      num_cpus: 2
+      scsi: paravirtual
+  delegate_to: localhost
+
+- name: Create a diskless VM
+  community.vmware.vmware_guest:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    datacenter: "{{ dc1 }}"
+    state: poweredoff
+    cluster: "{{ ccr1 }}"
+    name: diskless_vm
+    folder: /Asia-Datacenter1/vm
+    guest_id: centos64Guest
+    datastore: "{{ ds1 }}"
+    hardware:
+        memory_mb: 1024
+        num_cpus: 2
+        num_cpu_cores_per_socket: 1
+
+- name: Create a VM with multiple disks of different disk controller types
+  community.vmware.vmware_guest:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    folder: /DC1/vm/
+    name: test_vm_multi_disks
+    state: poweredoff
+    guest_id: centos64Guest
+    datastore: datastore1
+    disk:
+    - size_gb: 10
+      controller_type: 'nvme'
+      controller_number: 0
+      unit_number: 0
+    - size_gb: 10
+      controller_type: 'paravirtual'
+      controller_number: 0
+      unit_number: 1
+    - size_gb: 10
+      controller_type: 'sata'
+      controller_number: 0
+      unit_number: 2
+    hardware:
+      memory_mb: 512
+      num_cpus: 4
+      version: 14
+    networks:
+    - name: VM Network
+      device_type: vmxnet3
+  delegate_to: localhost
+  register: deploy_vm
+
+- name: Create a VM with NVDIMM device
+  community.vmware.vmware_guest:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    folder: /DC1/vm/
+    name: test_vm_nvdimm
+    state: poweredoff
+    guest_id: centos7_64Guest
+    datastore: datastore1
+    hardware:
+      memory_mb: 512
+      num_cpus: 4
+      version: 14
+    networks:
+    - name: VM Network
+      device_type: vmxnet3
+    nvdimm:
+      state: present
+      size_mb: 2048
+  delegate_to: localhost
+  register: deploy_vm
